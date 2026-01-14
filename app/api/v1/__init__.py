@@ -6,7 +6,7 @@ Aggregates all v1 endpoint routers.
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import auth, users, courses, analysis, progress, certificates
+from app.api.v1.endpoints import auth, users, courses, analysis, progress, certificates, analytics
 
 router = APIRouter()
 
@@ -27,3 +27,6 @@ router.include_router(progress.router)
 
 # Include certificate routes
 router.include_router(certificates.router)
+
+# Include analytics routes
+router.include_router(analytics.router)

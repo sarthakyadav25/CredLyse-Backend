@@ -23,6 +23,7 @@ from app.schemas.progress import (
     QuizResult,
     EnrollmentResponse,
 )
+from app.schemas.analytics import StudentAnalyticsRow
 
 __all__ = [
     # User
@@ -48,4 +49,6 @@ __all__ = [
     "QuizSubmission",
     "QuizResult",
     "EnrollmentResponse",
+    # Analytics
+    "StudentAnalyticsRow",
 ]
