@@ -14,6 +14,15 @@ from app.schemas.course import (
     PlaylistResponse,
     PlaylistListResponse,
 )
+from app.schemas.progress import (
+    ProgressStart,
+    ProgressUpdate,
+    ProgressComplete,
+    ProgressResponse,
+    QuizSubmission,
+    QuizResult,
+    EnrollmentResponse,
+)
 
 __all__ = [
     # User
@@ -31,4 +40,12 @@ __all__ = [
     "PlaylistBase",
     "PlaylistResponse",
     "PlaylistListResponse",
+    # Progress
+    "ProgressStart",
+    "ProgressUpdate",
+    "ProgressComplete",
+    "ProgressResponse",
+    "QuizSubmission",
+    "QuizResult",
+    "EnrollmentResponse",
 ]
