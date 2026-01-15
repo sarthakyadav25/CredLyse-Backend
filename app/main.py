@@ -41,13 +41,24 @@ app = FastAPI(
 )
 
 # Configure CORS
+origins = settings.cors_origins_list
+# Always allow YouTube for the extension
+if "https://www.youtube.com" not in origins:
+    origins.append("https://www.youtube.com")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_private_network_access_header(request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
 
 # Mount static directory
 from fastapi.staticfiles import StaticFiles

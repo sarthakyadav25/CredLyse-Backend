@@ -21,6 +21,7 @@ from app.schemas.course import (
 from app.services import course_service
 
 
+
 router = APIRouter(prefix="/courses", tags=["Courses"])
 
 
@@ -73,6 +74,7 @@ async def list_courses(
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(10, ge=1, le=100, description="Items per page"),
+    search: Optional[str] = Query(None, description="Search by title or creator name"),
 ) -> PlaylistListResponse:
     """
     Get a paginated list of all published courses.
@@ -84,6 +86,7 @@ async def list_courses(
         db: Database session.
         page: Page number (1-indexed).
         size: Number of items per page.
+        search: Optional search term for title or creator name.
         
     Returns:
         Paginated list of published courses.
@@ -92,6 +95,7 @@ async def list_courses(
         db=db,
         page=page,
         size=size,
+        search=search,
     )
     
     pages = (total + size - 1) // size  # Ceiling division

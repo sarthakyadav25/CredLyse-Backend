@@ -66,10 +66,12 @@ class QuizResult(BaseModel):
 class EnrollmentResponse(BaseModel):
     """Schema for enrollment response."""
     
-    enrollment_id: int
+    id: int
     playlist_id: int
     is_completed: bool
-    total_videos: int
-    watched_videos: int
+    created_at: Optional[str] = None
+    # Nested playlist info
+    playlist: Optional[dict] = None
     
     model_config = {"from_attributes": True}
+

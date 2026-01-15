@@ -30,6 +30,7 @@ class VideoResponse(VideoBase):
     playlist_id: int
     has_quiz: bool
     analysis_status: AnalysisStatus
+    quiz_data: Optional[dict] = Field(default=None, description="Quiz questions and answers")
     
     model_config = {"from_attributes": True}
 

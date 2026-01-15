@@ -7,14 +7,10 @@ Password hashing and JWT token management.
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
-
-
-# Password hashing context using bcrypt
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
@@ -27,7 +23,11 @@ def hash_password(password: str) -> str:
     Returns:
         str: Hashed password.
     """
-    return pwd_context.hash(password)
+    # Use bcrypt directly instead of passlib for Python 3.13 compatibility
+    password_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode('utf-8')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -41,7 +41,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         bool: True if passwords match, False otherwise.
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        password_bytes = plain_password.encode('utf-8')
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
+    except Exception:
+        return False
 
 
 def create_access_token(subject: str | Any, expires_delta: timedelta | None = None) -> str:

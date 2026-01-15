@@ -49,6 +49,33 @@ async def get_video_with_playlist(
     return video
 
 
+async def get_user_enrollments(
+    user: User,
+    db: AsyncSession,
+) -> list[Enrollment]:
+    """
+    Get all enrollments for a user with their playlist data.
+    
+    Args:
+        user: Current user.
+        db: Database session.
+        
+    Returns:
+        List of Enrollment objects with playlist relationship loaded.
+    """
+    from sqlalchemy.orm import selectinload
+    
+    result = await db.execute(
+        select(Enrollment)
+        .where(Enrollment.user_id == user.id)
+        .options(selectinload(Enrollment.playlist))
+        .order_by(Enrollment.created_at.desc())
+    )
+    enrollments = list(result.scalars().all())
+    
+    return enrollments
+
+
 async def get_or_create_enrollment(
     user: User,
     playlist_id: int,

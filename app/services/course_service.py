@@ -6,7 +6,7 @@ Business logic for course/playlist management with YouTube API integration.
 
 import re
 import uuid
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, Optional
 
 import httpx
 from fastapi import HTTPException, status
@@ -374,6 +374,7 @@ async def get_published_courses(
     db: AsyncSession,
     page: int = 1,
     size: int = 10,
+    search: Optional[str] = None,
 ) -> Tuple[List[Playlist], int]:
     """
     Get paginated list of published courses.
@@ -382,21 +383,33 @@ async def get_published_courses(
         db: Database session.
         page: Page number (1-indexed).
         size: Items per page.
+        search: Optional search term for title or creator name.
         
     Returns:
         Tuple of (playlists, total_count).
     """
+    from app.models.user import User
+    
+    # Build base query with join for creator search
+    base_query = select(Playlist).where(Playlist.is_published == True)
+    
+    # Apply search filter if provided
+    if search:
+        search_term = f"%{search.lower()}%"
+        base_query = base_query.join(Playlist.creator).where(
+            (func.lower(Playlist.title).like(search_term)) |
+            (func.lower(User.full_name).like(search_term))
+        )
+    
     # Count total
-    count_result = await db.execute(
-        select(func.count(Playlist.id)).where(Playlist.is_published == True)
-    )
+    count_query = select(func.count()).select_from(base_query.subquery())
+    count_result = await db.execute(count_query)
     total = count_result.scalar() or 0
     
     # Fetch paginated results
     offset = (page - 1) * size
     result = await db.execute(
-        select(Playlist)
-        .where(Playlist.is_published == True)
+        base_query
         .offset(offset)
         .limit(size)
         .order_by(Playlist.id.desc())

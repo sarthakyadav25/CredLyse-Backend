@@ -98,3 +98,51 @@ async def get_current_active_user(
     # Add additional checks here if needed (e.g., is_active, is_verified)
     # For now, we just return the user as-is
     return current_user
+
+
+# Optional OAuth2 scheme that doesn't require authentication
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+
+async def get_current_user_optional(
+    token: Annotated[str | None, Depends(oauth2_scheme_optional)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User | None:
+    """
+    Dependency to optionally get the current authenticated user.
+    
+    Similar to get_current_user but returns None instead of raising
+    an exception if no valid token is provided.
+    
+    Args:
+        token: Optional JWT token from Authorization header.
+        db: Database session (auto-injected).
+        
+    Returns:
+        User | None: The authenticated user or None if not authenticated.
+    """
+    if not token:
+        return None
+    
+    # Decode the JWT token
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+    
+    # Extract user ID from token payload
+    user_id_str: str | None = payload.get("sub")
+    if user_id_str is None:
+        return None
+    
+    try:
+        user_id = uuid.UUID(user_id_str)
+    except ValueError:
+        return None
+    
+    # Fetch user from database
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = result.scalar_one_or_none()
+    
+    return user

@@ -20,11 +20,60 @@ from app.schemas.progress import (
     ProgressResponse,
     QuizSubmission,
     QuizResult,
+    EnrollmentResponse,
 )
 from app.services import progress_service
 
 
 router = APIRouter(prefix="/progress", tags=["Progress"])
+
+
+@router.get(
+    "/enrollments",
+    response_model=list[dict],
+    summary="Get user enrollments",
+)
+async def get_enrollments(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict]:
+    """
+    Get all courses the current user is enrolled in.
+    
+    Returns list of enrollments with playlist information.
+    """
+    enrollments = await progress_service.get_user_enrollments(
+        user=current_user,
+        db=db,
+    )
+    
+    # Convert to response format
+    result = []
+    for enrollment in enrollments:
+        playlist = enrollment.playlist
+        # Construct thumbnail URL from first video's YouTube ID
+        thumbnail_url = None
+        if playlist and playlist.videos:
+            first_video = playlist.videos[0]
+            thumbnail_url = f"https://img.youtube.com/vi/{first_video.youtube_video_id}/mqdefault.jpg"
+        
+        result.append({
+            "id": enrollment.id,
+            "playlist_id": enrollment.playlist_id,
+            "is_completed": enrollment.is_completed,
+            "enrolled_at": enrollment.created_at.isoformat() if enrollment.created_at else None,
+            "playlist": {
+                "id": playlist.id,
+                "title": playlist.title,
+                "description": playlist.description,
+                "thumbnail_url": thumbnail_url,
+                "video_count": playlist.total_videos,
+                "is_published": playlist.is_published,
+                "youtube_playlist_id": playlist.Youtubelist_id,
+            } if playlist else None,
+        })
+    
+    return result
 
 
 @router.post(
