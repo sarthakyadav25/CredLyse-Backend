@@ -17,6 +17,8 @@ from app.models.user import User
 from app.models.playlist import Playlist
 from app.models.video import Video
 from app.models.enrollment import Enrollment
+from app.models.video_progress import VideoProgress
+from app.models.enums import WatchStatus
 
 router = APIRouter(prefix="/extension", tags=["extension"])
 
@@ -53,6 +55,7 @@ async def get_playlist_status(
     # Check enrollment if user is logged in
     is_enrolled = False
     enrollment_id = None
+    progress_map = {}
     
     if current_user:
         enrollment_result = await db.execute(
@@ -65,6 +68,15 @@ async def get_playlist_status(
         if enrollment:
             is_enrolled = True
             enrollment_id = enrollment.id
+            
+            # Fetch all progress for this enrollment
+            progress_result = await db.execute(
+                select(VideoProgress).where(
+                    VideoProgress.enrollment_id == enrollment.id
+                )
+            )
+            progress_records = progress_result.scalars().all()
+            progress_map = {p.video_id: p for p in progress_records}
     
     # Build video list
     # Sort by ID to ensure consistent ordering since 'order' field doesn't exist
@@ -72,12 +84,17 @@ async def get_playlist_status(
     
     videos = []
     for index, video in enumerate(sorted_videos):
+        # Get progress for this video
+        vp = progress_map.get(video.id)
+        
         videos.append({
             "id": video.id,
             "youtube_video_id": video.youtube_video_id,
             "title": video.title,
             "has_quiz": video.has_quiz,
             "order": index + 1,
+            "is_watched": vp.watch_status == WatchStatus.WATCHED if vp else False,
+            "is_quiz_passed": vp.is_quiz_passed if vp else False,
         })
     
     # Already sorted
