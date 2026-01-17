@@ -6,7 +6,9 @@ and fetch quiz data.
 """
 
 from typing import List, Optional
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -196,3 +198,75 @@ async def enroll_in_playlist(
         "message": "Enrolled successfully",
         "enrollment_id": enrollment.id,
     }
+
+
+@router.get("/certificate/{playlist_id}")
+async def get_certificate(
+    playlist_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Download certificate for a completed course.
+    
+    Course is considered complete when all quizzes in the playlist are passed.
+    Video watch status is not considered.
+    """
+    # Check playlist exists
+    playlist_result = await db.execute(
+        select(Playlist)
+        .options(selectinload(Playlist.videos))
+        .where(Playlist.id == playlist_id)
+    )
+    playlist = playlist_result.scalar_one_or_none()
+    
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    
+    # Check enrollment
+    enrollment_result = await db.execute(
+        select(Enrollment).where(
+            Enrollment.user_id == current_user.id,
+            Enrollment.playlist_id == playlist_id,
+        )
+    )
+    enrollment = enrollment_result.scalar_one_or_none()
+    
+    if not enrollment:
+        raise HTTPException(status_code=403, detail="Not enrolled in this playlist")
+    
+    # Get all videos with quizzes
+    videos_with_quizzes = [v for v in playlist.videos if v.has_quiz]
+    
+    if not videos_with_quizzes:
+        raise HTTPException(status_code=400, detail="This playlist has no quizzes")
+    
+    # Get progress for all videos
+    progress_result = await db.execute(
+        select(VideoProgress).where(
+            VideoProgress.enrollment_id == enrollment.id
+        )
+    )
+    progress_records = progress_result.scalars().all()
+    progress_map = {p.video_id: p for p in progress_records}
+    
+    # Check if all quizzes are passed
+    for video in videos_with_quizzes:
+        vp = progress_map.get(video.id)
+        if not vp or not vp.is_quiz_passed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Quiz not passed for video: {video.title}. Complete all quizzes to get certificate."
+            )
+    
+    # All quizzes passed, return certificate
+    certificate_path = Path(__file__).parent.parent.parent.parent / "resources" / "Course-Completion-Certificate.jpg"
+    
+    if not certificate_path.exists():
+        raise HTTPException(status_code=500, detail="Certificate file not found")
+    
+    return FileResponse(
+        path=certificate_path,
+        media_type="image/jpeg",
+        filename=f"Credlyse-Certificate-{playlist.title}.jpg",
+    )

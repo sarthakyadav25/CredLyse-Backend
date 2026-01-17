@@ -379,11 +379,15 @@ async def submit_quiz(
     )
     progress = progress_result.scalar_one_or_none()
     
+    # Create progress record if it doesn't exist (user taking quiz without watching video)
     if not progress:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Progress not found. Watch the video first.",
+        progress = VideoProgress(
+            enrollment_id=enrollment.id,
+            video_id=video_id,
+            watch_status=WatchStatus.IN_PROGRESS,  # Set to IN_PROGRESS, not WATCHED
         )
+        db.add(progress)
+        await db.flush()
     
     # Grade the quiz
     questions = video.quiz_data.get("questions", [])
@@ -412,6 +416,10 @@ async def submit_quiz(
     progress.quiz_score = score
     progress.is_quiz_passed = passed
     
+    # If quiz passed, check if all quizzes in the playlist are now passed
+    if passed:
+        await check_and_update_enrollment_completion(enrollment, video.playlist_id, db)
+    
     await db.commit()
     await db.refresh(progress)
     
@@ -425,3 +433,61 @@ async def submit_quiz(
     }
     
     return progress, result
+
+
+async def check_and_update_enrollment_completion(
+    enrollment: Enrollment,
+    playlist_id: int,
+    db: AsyncSession,
+) -> bool:
+    """
+    Check if all quizzes in the playlist are passed and update enrollment.is_completed.
+    
+    Args:
+        enrollment: User's enrollment.
+        playlist_id: Playlist ID.
+        db: Database session.
+        
+    Returns:
+        True if enrollment is now complete, False otherwise.
+    """
+    from sqlalchemy.orm import selectinload
+    
+    # Get all videos with quizzes in the playlist
+    playlist_result = await db.execute(
+        select(Playlist)
+        .options(selectinload(Playlist.videos))
+        .where(Playlist.id == playlist_id)
+    )
+    playlist = playlist_result.scalar_one_or_none()
+    
+    if not playlist:
+        return False
+    
+    videos_with_quizzes = [v for v in playlist.videos if v.has_quiz]
+    
+    if not videos_with_quizzes:
+        return False
+    
+    # Get all progress records for this enrollment
+    progress_result = await db.execute(
+        select(VideoProgress).where(VideoProgress.enrollment_id == enrollment.id)
+    )
+    progress_records = progress_result.scalars().all()
+    progress_map = {p.video_id: p for p in progress_records}
+    
+    # Check if all quizzes are passed
+    all_passed = True
+    for video in videos_with_quizzes:
+        vp = progress_map.get(video.id)
+        if not vp or not vp.is_quiz_passed:
+            all_passed = False
+            break
+    
+    # Update enrollment if all quizzes passed
+    if all_passed and not enrollment.is_completed:
+        enrollment.is_completed = True
+        # Note: commit will happen in calling function
+    
+    return all_passed
+
