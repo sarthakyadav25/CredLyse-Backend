@@ -30,3 +30,7 @@ langchain-openai>=0.2.0
 
 # PDF Generation
 reportlab>=4.0.0
+pypdf>=5.0.0
+
+# Cloud Storage
+cloudinary>=1.40.0

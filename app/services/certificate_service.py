@@ -10,9 +10,7 @@ from datetime import datetime
 from typing import Tuple, List, Optional
 
 from fastapi import HTTPException, status
-from reportlab.lib.pagesizes import landscape, letter
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import inch
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,10 +21,8 @@ from app.models.enrollment import Enrollment
 from app.models.video_progress import VideoProgress
 from app.models.certificate import Certificate
 from app.models.enums import WatchStatus
-
-
-# Directory to store generated certificates
-CERTIFICATES_DIR = "static/certificates"
+from app.services.pdf_service import PdfGenerator
+from app.services.storage_service import CloudinaryService
 
 
 async def check_eligibility(
@@ -102,9 +98,52 @@ async def check_eligibility(
     return True, []
 
 
-def generate_certificate_pdf(certificate: Certificate, user_name: str, course_title: str) -> str:
+def _generate_and_upload_certificate(
+    cert_id: str,
+    user_name: str,
+    course_title: str,
+    issue_date: str,
+) -> str:
     """
-    Generate a PDF certificate using ReportLab.
+    Blocking function to generate PDF and upload to Cloudinary.
+    
+    This function is meant to be run in a thread pool.
+    
+    Args:
+        cert_id: Unique certificate ID (UUID string).
+        user_name: Name of the student.
+        course_title: Title of the course.
+        issue_date: Formatted date string.
+        
+    Returns:
+        Cloudinary secure_url of the uploaded certificate.
+    """
+    # Step 1: Generate PDF with template overlay
+    pdf_bytes = PdfGenerator.generate_overlay(
+        student_name=user_name,
+        course_name=course_title,
+        issue_date=issue_date,
+        cert_id=cert_id,
+    )
+    
+    # Step 2: Upload to Cloudinary
+    secure_url = CloudinaryService.upload_pdf(
+        pdf_bytes=pdf_bytes,
+        certificate_id=cert_id,
+    )
+    
+    return secure_url
+
+
+async def generate_certificate_pdf(
+    certificate: Certificate,
+    user_name: str,
+    course_title: str,
+) -> str:
+    """
+    Generate a PDF certificate using template overlay and upload to Cloudinary.
+    
+    Uses run_in_threadpool to avoid blocking the async event loop.
     
     Args:
         certificate: Certificate model instance.
@@ -112,52 +151,22 @@ def generate_certificate_pdf(certificate: Certificate, user_name: str, course_ti
         course_title: Title of the course.
         
     Returns:
-        Relative URL path to the generated PDF.
+        Cloudinary secure_url of the uploaded PDF.
     """
-    # Ensure directory exists
-    os.makedirs(CERTIFICATES_DIR, exist_ok=True)
+    # Format the issue date
+    issue_date = certificate.issued_at.strftime("%B %d, %Y")
+    cert_id = str(certificate.id)
     
-    filename = f"{certificate.id}.pdf"
-    filepath = os.path.join(CERTIFICATES_DIR, filename)
+    # Run blocking operations in threadpool
+    secure_url = await run_in_threadpool(
+        _generate_and_upload_certificate,
+        cert_id,
+        user_name,
+        course_title,
+        issue_date,
+    )
     
-    # Create PDF
-    c = canvas.Canvas(filepath, pagesize=landscape(letter))
-    width, height = landscape(letter)
-    
-    # Draw Border
-    c.setStrokeColorRGB(0.2, 0.2, 0.8)
-    c.setLineWidth(5)
-    c.rect(0.5 * inch, 0.5 * inch, width - 1 * inch, height - 1 * inch)
-    
-    # Title
-    c.setFont("Helvetica-Bold", 40)
-    c.drawCentredString(width / 2, height - 2.5 * inch, "Certificate of Completion")
-    
-    # Subtitle
-    c.setFont("Helvetica", 20)
-    c.drawCentredString(width / 2, height - 3.2 * inch, "This is to certify that")
-    
-    # Student Name
-    c.setFont("Helvetica-Bold", 30)
-    c.drawCentredString(width / 2, height - 4 * inch, user_name)
-    
-    # Completed Text
-    c.setFont("Helvetica", 20)
-    c.drawCentredString(width / 2, height - 4.8 * inch, "has successfully completed the course")
-    
-    # Course Title
-    c.setFont("Helvetica-Bold", 25)
-    c.drawCentredString(width / 2, height - 5.5 * inch, course_title)
-    
-    # Date and ID
-    c.setFont("Helvetica", 12)
-    date_str = certificate.issued_at.strftime("%B %d, %Y")
-    c.drawString(1 * inch, 1 * inch, f"Date: {date_str}")
-    c.drawString(width - 3.5 * inch, 1 * inch, f"Certificate ID: {str(certificate.id)[:8]}")
-    
-    c.save()
-    
-    return f"/{CERTIFICATES_DIR}/{filename}"
+    return secure_url
 
 
 async def issue_certificate(
@@ -225,8 +234,8 @@ async def issue_certificate(
     )
     db.add(certificate)
     
-    # 4. Generate PDF
-    pdf_url = generate_certificate_pdf(certificate, user.full_name, playlist.title)
+    # 4. Generate PDF and upload to Cloudinary
+    pdf_url = await generate_certificate_pdf(certificate, user.full_name, playlist.title)
     certificate.pdf_url = pdf_url
     
     # 5. Update Enrollment

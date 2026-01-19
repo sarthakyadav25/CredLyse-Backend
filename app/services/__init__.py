@@ -10,6 +10,8 @@ from app.services import processing_service
 from app.services import progress_service
 from app.services import certificate_service
 from app.services import analytics_service
+from app.services import storage_service
+from app.services import pdf_service
 
 __all__ = [
     "course_service", 
@@ -18,4 +20,6 @@ __all__ = [
     "progress_service",
     "certificate_service",
     "analytics_service",
+    "storage_service",
+    "pdf_service",
 ]

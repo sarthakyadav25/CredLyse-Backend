@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # Google OAuth2
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
+    
+    # Cloudinary (Certificate Storage)
+    CLOUDINARY_CLOUD_NAME: str = ""
+    CLOUDINARY_API_KEY: str = ""
+    CLOUDINARY_API_SECRET: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",
