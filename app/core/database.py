@@ -56,8 +56,8 @@ def get_engine() -> AsyncEngine:
             db_url,
             echo=settings.is_development,
             pool_pre_ping=True,
-            pool_size=5,
-            max_overflow=10,
+            pool_size=20,
+            max_overflow=40,
             connect_args={"ssl": ssl_context},
         )
     return _engine

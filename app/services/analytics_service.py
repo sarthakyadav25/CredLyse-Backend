@@ -23,7 +23,7 @@ async def get_course_analytics(
     creator_id: str,  # UUID as string or object
     playlist_id: int,
     db: AsyncSession,
-) -> List[StudentAnalyticsRow]:
+) -> "CourseAnalyticsResponse":
     """
     Get analytics for all students enrolled in a course.
     
@@ -90,7 +90,7 @@ async def get_course_analytics(
         
         row = StudentAnalyticsRow(
             student_name=enrollment.user.full_name,
-            student_email=enrollment.user.email,
+            user_email=enrollment.user.email,
             enrolled_at=enrollment.created_at,
             completion_percentage=round(completion_pct, 1),
             average_quiz_score=round(avg_score, 1) if avg_score is not None else None,
@@ -98,4 +98,23 @@ async def get_course_analytics(
         )
         analytics_data.append(row)
     
-    return analytics_data
+    # Calculate global stats
+    total_enrollments = len(analytics_data)
+    
+    avg_completion = 0.0
+    if total_enrollments > 0:
+        avg_completion = sum(r.completion_percentage for r in analytics_data) / total_enrollments
+        
+    avg_quiz_score = 0.0
+    valid_quiz_scores = [r.average_quiz_score for r in analytics_data if r.average_quiz_score is not None]
+    if valid_quiz_scores:
+        avg_quiz_score = sum(valid_quiz_scores) / len(valid_quiz_scores)
+    
+    # Return aggregated response matching frontend expectation
+    from app.schemas.analytics import CourseAnalyticsResponse
+    return CourseAnalyticsResponse(
+        total_enrollments=total_enrollments,
+        completion_rate=round(avg_completion, 1),
+        average_quiz_score=round(avg_quiz_score, 1),
+        enrollments=analytics_data
+    )
