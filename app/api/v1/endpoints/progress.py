@@ -69,7 +69,8 @@ async def get_enrollments(
                 "thumbnail_url": thumbnail_url,
                 "video_count": playlist.total_videos,
                 "is_published": playlist.is_published,
-                "youtube_playlist_id": playlist.Youtubelist_id,
+                "Youtubelist_id": playlist.Youtubelist_id,
+                "type": playlist.type.value if playlist.type else "PLAYLIST",
             } if playlist else None,
         })
     
