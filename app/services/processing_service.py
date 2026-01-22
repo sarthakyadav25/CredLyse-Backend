@@ -88,6 +88,7 @@ async def process_course_content(
             analysis = await ai_service.analyze_video_content(
                 video_id=video.youtube_video_id,
                 video_title=video.title,
+                duration_seconds=video.duration_seconds,
             )
             
             video_result["method"] = analysis.get("method")

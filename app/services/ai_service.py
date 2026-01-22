@@ -70,38 +70,75 @@ def fetch_transcript(video_id: str) -> Optional[str]:
 
 # ============== Quiz Generation Prompts ==============
 
-QUIZ_SYSTEM_PROMPT = """You are an educational AI assistant. Analyze the provided content and:
+def get_quiz_system_prompt(num_questions: int = 5) -> str:
+    """Generate the quiz system prompt with dynamic question count."""
+    return f"""You are an educational AI assistant. Analyze the provided content and:
 
 1. DECIDE: Is this educational content that teaches concepts? 
    - Return has_quiz=false for: intros, outros, vlogs, announcements, previews.
    - Return has_quiz=true for: lessons, tutorials, explanations, lectures.
 
-2. GENERATE: If has_quiz=true, create exactly 5 multiple-choice questions.
+2. GENERATE: If has_quiz=true, create exactly {num_questions} multiple-choice questions.
 
 Respond with valid JSON in this exact format:
-{
+{{
   "has_quiz": boolean,
   "reason": "Brief explanation",
   "questions": [
-    {
+    {{
       "q": "Question text?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "answer": "The correct option text"
-    }
+    }}
   ]
-}
+}}
 
 If has_quiz is false, questions should be empty []."""
 
 
+def calculate_question_count(duration_seconds: int) -> int:
+    """
+    Calculate the number of quiz questions based on video duration.
+    
+    Rules:
+    - 1-10 min: 5 questions
+    - 11-30 min: 10 questions
+    - 31-60 min: 15 questions
+    - > 60 min: 15 + 5 questions for every additional 20 minutes
+    
+    Args:
+        duration_seconds: Video duration in seconds.
+        
+    Returns:
+        Number of questions to generate.
+    """
+    if duration_seconds <= 0:
+        return 5  # default for unknown duration
+    
+    duration_minutes = duration_seconds / 60
+    
+    if duration_minutes <= 10:
+        return 5
+    elif duration_minutes <= 30:
+        return 10
+    elif duration_minutes <= 60:
+        return 15
+    else:
+        # > 60 min: 15 + 5 for every 20 minutes beyond 60
+        extra_minutes = duration_minutes - 60
+        additional_questions = int(extra_minutes // 20) * 5
+        return 15 + additional_questions
+
+
 # ============== OpenAI Quiz Generation ==============
 
-async def generate_quiz_with_openai(transcript: str) -> Dict[str, Any]:
+async def generate_quiz_with_openai(transcript: str, num_questions: int = 5) -> Dict[str, Any]:
     """
     Generate quiz from transcript using OpenAI.
     
     Args:
         transcript: The video transcript text.
+        num_questions: Number of questions to generate.
         
     Returns:
         Dict containing has_quiz, reason, and questions.
@@ -117,12 +154,12 @@ async def generate_quiz_with_openai(transcript: str) -> Dict[str, Any]:
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": QUIZ_SYSTEM_PROMPT},
+                {"role": "system", "content": get_quiz_system_prompt(num_questions)},
                 {"role": "user", "content": f"Analyze this transcript:\n\n{transcript}"}
             ],
             response_format={"type": "json_object"},
             temperature=0.7,
-            max_tokens=2000,
+            max_tokens=2000 + (num_questions * 200),  # Scale tokens with question count
         )
         
         content = response.choices[0].message.content
@@ -142,7 +179,7 @@ async def generate_quiz_with_openai(transcript: str) -> Dict[str, Any]:
 
 # ============== Gemini Fallback (via LangChain) ==============
 
-async def generate_quiz_with_gemini(video_id: str, video_title: str) -> Dict[str, Any]:
+async def generate_quiz_with_gemini(video_id: str, video_title: str, num_questions: int = 5) -> Dict[str, Any]:
     """
     Generate quiz using Gemini by analyzing the YouTube video directly.
     This is used as a fallback when transcript is unavailable.
@@ -150,6 +187,7 @@ async def generate_quiz_with_gemini(video_id: str, video_title: str) -> Dict[str
     Args:
         video_id: YouTube video ID.
         video_title: Title of the video.
+        num_questions: Number of questions to generate.
         
     Returns:
         Dict containing has_quiz, reason, and questions.
@@ -180,7 +218,7 @@ async def generate_quiz_with_gemini(video_id: str, video_title: str) -> Dict[str
 Video URL: {youtube_url}
 Video Title: {video_title}
 
-{QUIZ_SYSTEM_PROMPT}
+{get_quiz_system_prompt(num_questions)}
 
 Watch/analyze the video and respond with the JSON format specified."""
 
@@ -235,7 +273,7 @@ Watch/analyze the video and respond with the JSON format specified."""
 
 # ============== Main Analysis Pipeline ==============
 
-async def analyze_video_content(video_id: str, video_title: str = "") -> Dict[str, Any]:
+async def analyze_video_content(video_id: str, video_title: str = "", duration_seconds: int = 0) -> Dict[str, Any]:
     """
     Full pipeline: fetch transcript and generate quiz.
     Falls back to Gemini if transcript unavailable.
@@ -243,10 +281,14 @@ async def analyze_video_content(video_id: str, video_title: str = "") -> Dict[st
     Args:
         video_id: YouTube video ID.
         video_title: Title of the video (for Gemini fallback).
+        duration_seconds: Video duration in seconds (for dynamic question count).
         
     Returns:
         Dict with transcript, has_quiz, quiz_data, and success status.
     """
+    # Calculate number of questions based on duration
+    num_questions = calculate_question_count(duration_seconds)
+    
     result = {
         "success": False,
         "transcript": None,
@@ -254,6 +296,7 @@ async def analyze_video_content(video_id: str, video_title: str = "") -> Dict[st
         "quiz_data": None,
         "error": None,
         "method": None,  # "openai" or "gemini"
+        "num_questions": num_questions,  # Include for debugging
     }
     
     # Step 1: Try to fetch transcript
@@ -265,7 +308,7 @@ async def analyze_video_content(video_id: str, video_title: str = "") -> Dict[st
         result["method"] = "openai"
         
         try:
-            quiz_data = await generate_quiz_with_openai(transcript)
+            quiz_data = await generate_quiz_with_openai(transcript, num_questions)
             result["has_quiz"] = quiz_data.get("has_quiz", False)
             result["quiz_data"] = quiz_data
             result["success"] = True
@@ -277,7 +320,7 @@ async def analyze_video_content(video_id: str, video_title: str = "") -> Dict[st
         result["transcript"] = None
         
         try:
-            quiz_data = await generate_quiz_with_gemini(video_id, video_title)
+            quiz_data = await generate_quiz_with_gemini(video_id, video_title, num_questions)
             result["has_quiz"] = quiz_data.get("has_quiz", False)
             result["quiz_data"] = quiz_data
             result["success"] = True
